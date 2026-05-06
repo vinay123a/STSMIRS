@@ -1,0 +1,22 @@
+{
+  "A": {
+    "zone_id": "A",
+    "score": 100.0,
+    "event_count": 8
+  },
+  "B": {
+    "zone_id": "B",
+    "score": 100.0,
+    "event_count": 2
+  },
+  "C": {
+    "zone_id": "C",
+    "score": 100.0,
+    "event_count": 0
+  },
+  "ZONE-B": {
+    "zone_id": "ZONE-B",
+    "score": 40.04773259162903,
+    "event_count": 2
+  }
+}

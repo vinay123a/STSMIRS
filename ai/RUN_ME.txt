@@ -1,0 +1,38 @@
+STSMIRS Shareable Demo
+
+Folder purpose:
+- This is the smaller runnable copy for testing the live model.
+- It includes code, trained models, config, and face enrollment samples.
+- It does not include the full training datasets or virtual environment.
+
+How to run on another Windows PC:
+
+1. Open PowerShell in this folder.
+
+2. Create a virtual environment:
+   python -m venv .venv
+
+3. Activate it:
+   .\.venv\Scripts\Activate.ps1
+
+4. Install dependencies:
+   pip install -r requirements.txt
+
+5. Set the Ultralytics config folder:
+   $env:PYTHONUTF8='1'
+   $env:YOLO_CONFIG_DIR="$PWD\\.ultralytics"
+
+6. Run environment check:
+   python verify_env.py
+
+7. Run the live app with webcam:
+   python src\main.py --source 0
+
+Optional:
+- Run the ML session test:
+  python test_session_ml.py
+
+Notes:
+- Backend bridge is disabled in this share copy so it can run on another machine.
+- Face recognition uses the included face samples in project_videos\faces.
+- If the webcam is busy in another app, close that app first.

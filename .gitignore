@@ -1,0 +1,37 @@
+# Environment / secrets
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# SQLite databases
+*.db
+
+# Node.js / Hardhat
+node_modules/
+blockchain/artifacts/
+blockchain/cache/
+blockchain/typechain-types/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Virtual Environments
+.venv/
+native_venv/
+env/
+
+# Large Files & Keys
+*.pem
+*.pt
+*.pth
+Ultralytics/
+events_log.json
+.adm_ref_index.json

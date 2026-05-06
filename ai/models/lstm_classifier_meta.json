@@ -1,0 +1,25 @@
+{
+  "class_names": [
+    "Walking",
+    "Running",
+    "Loitering",
+    "Fall",
+    "Lying_Still",
+    "Fighting",
+    "Panic"
+  ],
+  "class_counts": {
+    "Walking": 146,
+    "Running": 90,
+    "Loitering": 136,
+    "Fall": 60,
+    "Lying_Still": 0,
+    "Fighting": 123,
+    "Panic": 0
+  },
+  "train_indices": 381,
+  "val_indices": 174,
+  "split_mode": "grouped",
+  "best_val_acc": 0.7586206896551724,
+  "best_val_loss": 0.7032090932473369
+}

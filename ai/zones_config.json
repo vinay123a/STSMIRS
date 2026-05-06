@@ -1,0 +1,65 @@
+{
+  "zones": [
+    {
+      "zone_id": "ZONE-A",
+      "type": "Restricted",
+      "polygon": [
+        [
+          17,
+          850
+        ],
+        [
+          707,
+          759
+        ],
+        [
+          1492,
+          719
+        ],
+        [
+          1499,
+          903
+        ],
+        [
+          28,
+          912
+        ],
+        [
+          18,
+          857
+        ]
+      ],
+      "label": "Restricted Area"
+    },
+    {
+      "zone_id": "ZONE-B",
+      "type": "Normal",
+      "polygon": [
+        [
+          708,
+          571
+        ],
+        [
+          1198,
+          531
+        ],
+        [
+          1473,
+          709
+        ],
+        [
+          723,
+          742
+        ],
+        [
+          703,
+          572
+        ]
+      ],
+      "label": "Main Area"
+    }
+  ],
+  "reference_frame": "reference_PHONE-CAM-01.jpg",
+  "created_at": "2026-03-19T19:37:07.701461",
+  "camera_id": "PHONE-CAM-01"
+}
