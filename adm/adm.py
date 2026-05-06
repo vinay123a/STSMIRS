@@ -69,7 +69,7 @@ class ADM:
             )
             with open(self._key_path, "wb") as f:
                 f.write(pem)
-            print(f"[ADM] Generated new RSA master key → {self._key_path}")
+            print(f"[ADM] Generated new RSA master key -> {self._key_path}")
 
     def get_public_key_pem(self) -> bytes:
         """Return the master public key in PEM format."""

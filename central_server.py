@@ -205,7 +205,7 @@ class CentralServer:
         result["zone_score"] = zone.score
 
         # Trigger emergency immediately since a high-confidence event occurred
-        print(f"[SERVER] ⚠  EMERGENCY TRIGGERED — High-confidence {event.event_type.value} detected.")
+        print(f"[SERVER] ! EMERGENCY TRIGGERED - High-confidence {event.event_type.value} detected.")
         emergency_type = EVENT_TO_EMERGENCY.get(event.event_type, "MEDICAL_PROBLEM")
         
         # We still pass the zone's score to the blockchain for context, 

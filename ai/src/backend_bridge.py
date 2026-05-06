@@ -2,13 +2,14 @@
 Bridge from the AI action pipeline to the STSMIRS backend/blockchain server.
 
 The backend project lives beside this repo, so this adapter keeps integration
-small and optional: action detections still work even if the backend is absent.
+small and optional. Action detections are sent via HTTP POST to the central server.
 """
 
 import json
 import os
 import sys
 import time
+import requests
 from pathlib import Path
 
 
@@ -18,7 +19,7 @@ if sys.platform == "win32":
 
 
 class BackendBridge:
-    """Forwards high-confidence AI detections into the backend CentralServer."""
+    """Forwards high-confidence AI detections into the backend via HTTP REST API."""
 
     def __init__(self, config_path="config.json"):
         self.project_root = Path(config_path).resolve().parent
@@ -27,11 +28,9 @@ class BackendBridge:
 
         self.cfg = config.get("backend_bridge", {})
         self.enabled = self.cfg.get("enabled", False)
+        self.api_url = self.cfg.get("api_url", "http://localhost:5000/api/detect")
         self.source = self.cfg.get("source", "AI_CAMERA")
-        self.state_dir = Path(self.cfg.get("state_dir", "data/backend_bridge"))
-        if not self.state_dir.is_absolute():
-            self.state_dir = self.project_root / self.state_dir
-        self.default_zone_id = self.cfg.get("default_zone_id", "CAMERA_ZONE")
+        self.default_zone_id = self.cfg.get("default_zone_id", "A")
         self.cooldown_sec = float(self.cfg.get("event_cooldown_sec", 12))
         self.action_event_map = self.cfg.get(
             "action_event_map",
@@ -39,54 +38,18 @@ class BackendBridge:
                 "Fall": "FALL",
                 "Lying_Still": "PANIC",
                 "Fighting": "AGGRESSION",
+                "Panic": "PANIC"
             },
         )
 
-        self.server = None
-        self.DetectionEvent = None
-        self.EventType = None
         self._last_sent = {}
 
         if self.enabled:
-            self._load_backend()
-
-    def _load_backend(self):
-        backend_path = Path(self.cfg.get("stsmirs_path", "")).expanduser()
-        if not backend_path.exists():
-            print(f"[BackendBridge] Backend path not found: {backend_path}")
-            self.enabled = False
-            return
-
-        sys.path.insert(0, str(backend_path))
-        old_cwd = os.getcwd()
-        try:
-            # central_server stores state next to its own file, but switching cwd
-            # helps any relative imports in the backend behave like its demo.
-            os.chdir(backend_path)
-            from central_server import CentralServer, DetectionEvent, EventType
-
-            self.server = CentralServer()
-            self._redirect_backend_state()
-            self.DetectionEvent = DetectionEvent
-            self.EventType = EventType
-            print(f"[BackendBridge] Connected to backend at {backend_path}")
-        except Exception as exc:
-            print(f"[BackendBridge] Backend disabled: {exc}")
-            self.enabled = False
-        finally:
-            os.chdir(old_cwd)
-
-    def _redirect_backend_state(self):
-        """Keep backend event/zone logs in this AI project, not the external repo."""
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        self.server.state_file = str(self.state_dir / "zones_state.json")
-        self.server.events_file = str(self.state_dir / "events_log.json")
-        self.server._load_state()
-        self.server._load_events()
+            print(f"[BackendBridge] HTTP Bridge initialized targeting {self.api_url}")
 
     def ingest_action(self, detection):
         """Send one action detection dict from ActionDetector.update()."""
-        if not self.enabled or self.server is None:
+        if not self.enabled:
             return None
 
         event_name = detection.get("event_type")
@@ -108,18 +71,24 @@ class BackendBridge:
             return None
         self._last_sent[key] = now
 
+        payload = {
+            "source": self.source,
+            "event_type": backend_event_name,
+            "confidence": confidence,
+            "zone_id": zone_id,
+            "tourist_id": tourist_id
+        }
+
         try:
-            event_type = getattr(self.EventType, backend_event_name)
-            event = self.DetectionEvent(
-                tourist_id=tourist_id,
-                event_type=event_type,
-                confidence=confidence,
-                zone_id=zone_id,
-                source=self.source,
-            )
-            result = self.server.ingest_event(event)
-            print(f"[BackendBridge] Sent {event_name} -> {result.get('action')}")
-            return result
-        except Exception as exc:
-            print(f"[BackendBridge] Failed to send backend event: {exc}")
+            # Add a short timeout so the AI thread doesn't hang if the server is down
+            response = requests.post(self.api_url, json=payload, timeout=2.0)
+            if response.status_code == 200:
+                result = response.json()
+                print(f"[BackendBridge] Sent {event_name} -> {result.get('final_action', 'OK')}")
+                return result
+            else:
+                print(f"[BackendBridge] Error from server: HTTP {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as exc:
+            print(f"[BackendBridge] Failed to send backend event (Server unreachable?): {exc}")
             return None
