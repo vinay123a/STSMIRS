@@ -280,14 +280,42 @@ def main():
             events = event_trigger.process_events(action_detections, zone_violations, scoring_engine, persons)
 
             for detection in action_detections:
-                backend_bridge.ingest_action(detection)
+                res = backend_bridge.ingest_action(detection)
+                if res and "zone_score" in res:
+                    detection["person"].health_score = res["zone_score"]
+                    # Update crime score based on penalty applied
+                    prev_crime = getattr(detection["person"], "crime_score", 0)
+                    detection["person"].crime_score = prev_crime + res.get("penalty_applied", 0)
 
+            # --- Aggregate and Process Events (Fall, Fight, Zone, etc.) ---
+            active_emergencies = []
             for ev in events:
-                print(f"[EVENT] {ev['event_type']} ({ev['confidence_level']})")
+                etype = ev['event_type']
+                tid = ev['tourist_id']
                 
-                # Show banner on UI
-                if ev['confidence_level'] in ["High", "Medium", "Critical"] or ev['event_type'] in ["Fall", "Fighting", "Panic"]:
-                    display.add_alert(f"{ev['event_type']} | {ev['tourist_id']}", level="danger")
+                # 1. Handle Zone Violations
+                if etype == 'Zone_Violation':
+                    res = backend_bridge.ingest_zone_violation(ev)
+                    active_emergencies.append(f"ZONE BREACH ({ev['zone_id']})")
+                    display.add_alert(f"RESTRICTED AREA: {tid}", level="warning")
+                    # Update local person object score if possible
+                    p_obj = ev.get("person")
+                    if p_obj and res and "zone_score" in res:
+                        p_obj.health_score = res["zone_score"]
+                        p_obj.crime_score = getattr(p_obj, "crime_score", 0) + res.get("penalty_applied", 40)
+                
+                # 2. Handle Action Emergencies (Fall, Fighting, Panic)
+                if etype in ["Fall", "Fighting", "Panic"] or ev['confidence_level'] == "Critical":
+                    active_emergencies.append(etype.upper())
+                    display.add_alert(f"{etype.upper()} DETECTED: {tid}", level="danger")
+            
+            # 3. Trigger Combined Emergency Banner if any events occurred
+            if active_emergencies:
+                combined_msg = " + ".join(sorted(list(set(active_emergencies))))
+                print(f"[UI_ALERT] Triggering banner: {combined_msg}") # Debug print
+                display.trigger_emergency(
+                    f"!!! {combined_msg} !!! >>> Person: {tid} >>> Blockchain Audit Logged"
+                )
 
             scoring_engine.update_persons(persons)
 

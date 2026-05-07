@@ -82,26 +82,49 @@ class DisplayEngine:
             frame: BGR image (modified in-place)
             person: TrackedPerson object (from tracker.py)
         """
-        x1, y1, x2, y2 = person.bbox
+        x1, y1, x2, y2 = map(int, person.bbox)
         is_alert = getattr(person, "is_alert", False)
-        box_color = self.color_alert if is_alert else self._get_id_color(person.track_id)
+        is_restricted = getattr(person, "zone_type", "") == "Restricted"
+        
+        # Get action variables FIRST (before restricted zone label uses them)
+        name = getattr(person, "track_label", f"T-{person.track_id:03d}")
+        action = getattr(person, "event_type", "")
+        skel_action = getattr(person, "skeleton_action", "")
+        
+        # Draw "RESTRICTED" or combined warning above box
+        if is_restricted:
+            # Combine restricted with any major action detected
+            alert_prefix = ""
+            if action in ["Fighting", "Fall", "Panic"]: alert_prefix = f"{action.upper()} + "
+            elif skel_action in ["Fighting", "Fall", "Panic"]: alert_prefix = f"{skel_action.upper()} + "
+            
+            warn_text = f"!!! {alert_prefix}RESTRICTED !!!"
+            t_size, _ = cv2.getTextSize(warn_text, self.font_face, 0.7, 2)
+            tx = int(x1 + (x2 - x1 - t_size[0]) / 2)
+            
+            # Ensure label stays on screen (don't draw off the top)
+            ty_bg_top = max(5, y1 - 45)
+            ty_bg_bottom = ty_bg_top + 30
+            ty_text = ty_bg_top + 22
+            
+            bg_color = (0, 0, 255) if int(time.time() * 4) % 2 == 0 else (0, 0, 150)
+            cv2.rectangle(frame, (tx - 5, ty_bg_top), (tx + t_size[0] + 5, ty_bg_bottom), bg_color, -1)
+            cv2.putText(frame, warn_text, (tx, ty_text),
+                        self.font_face, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+        
+        box_color = self.color_alert if (is_alert or is_restricted) else self._get_id_color(person.track_id)
 
         # Bounding box
         cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, self.box_thickness)
 
-        # Show Name/ID always
-        name = getattr(person, "track_label", f"T-{person.track_id:03d}")
-        
-        # Only show action if it's an emergency (Fall or Fighting)
-        action = getattr(person, "event_type", "")
-        skel_action = getattr(person, "skeleton_action", "")
-        
+        # Show Name/ID + action label (ONLY if confidence >= 70%)
         label = name
-        action_pct = self._format_percent(getattr(person, "action_confidence", 0.0))
+        action_conf = getattr(person, "action_confidence", 0.0)
+        action_pct = self._format_percent(action_conf)
         
-        if action in ["Fighting", "Fall"]:
+        if action in ["Fighting", "Fall", "Panic"] and action_conf >= 0.70:
             label = f"{name} - {action.upper()} ({action_pct})"
-        elif skel_action in ["Fighting", "Fall"]:
+        elif skel_action in ["Fighting", "Fall", "Panic"] and action_conf >= 0.70:
             label = f"{name} - {skel_action.upper()} ({action_pct})"
             
         self._draw_label(frame, label, (x1 + 4, y1 + 6), box_color, above=False, compact=True)
@@ -111,12 +134,34 @@ class DisplayEngine:
             zone_text = self._clean_text(person.zone_id).upper()
             self._draw_label(frame, zone_text, (max(x1 + 6, x2 - 104), y1 - 6), (255, 200, 0), above=True, compact=True)
 
+        # Health & Crime scores (ALWAYS VISIBLE)
+        health = getattr(person, "health_score", 100)
+        crime = getattr(person, "crime_score", 0)
+        
+        # Clamp to 0-100 for safety
+        h_val = max(0, min(100, int(health if health is not None else 100)))
+        c_val = max(0, min(100, int(crime if crime is not None else 0)))
+        
+        # Colors: Health (Green->Red), Crime (Red->Green)
+        h_color = (0, 200, 0) if h_val > 60 else (0, 200, 255) if h_val > 30 else (0, 0, 255)
+        score_text = f"HP:{h_val} | CR:{c_val}"
+        
+        # Ensure text stays within frame if person is at bottom
+        text_y = min(frame.shape[0] - 10, y2 + 18)
+        cv2.putText(frame, score_text, (x1 + 4, text_y),
+                    self.font_face, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+        
+        # Mini health bar below text
+        bar_y = text_y + 4
+        if bar_y < frame.shape[0] - 5:
+            bar_w = x2 - x1
+            cv2.rectangle(frame, (x1, bar_y), (x2, bar_y + 4), (40, 40, 40), -1)
+            cv2.rectangle(frame, (x1, bar_y), (x1 + int(bar_w * h_val / 100), bar_y + 4), h_color, -1)
+
         # Foot point
         cv2.circle(frame, person.foot_point, 4, (0, 0, 255), -1)
 
         # Score bars — only shown for emergencies (Fall / Fighting)
-        action = getattr(person, "event_type", "")
-        skel_action = getattr(person, "skeleton_action", "")
         is_emergency = action in ["Fighting", "Fall"] or skel_action in ["Fighting", "Fall"]
         if self.show_scores and is_emergency:
             self._draw_score_bars(frame, person, x1, y1, x2)
@@ -476,9 +521,6 @@ class DisplayEngine:
         # Layer 2: Person overlays
         if persons:
             self.draw_persons(output, persons)
-            # --- DISABLED ALL EXTRA PANELS (Walking, Running, Risk scores, etc.) ---
-            # self.draw_person_info_panel(output, persons)
-            # self.draw_risk_panel(output, persons)
 
         # Layer 3: Alert banners
         if self.show_alerts:
@@ -638,105 +680,3 @@ class DisplayEngine:
             value = 0.0
         value = max(0.0, min(1.0, value))
         return f"{int(round(value * 100.0)):02d}%"
-
-
-# ═══════════════════════════════════════════════════════════════
-#  STANDALONE TEST — Run: python src/display.py
-# ═══════════════════════════════════════════════════════════════
-if __name__ == "__main__":
-    import argparse
-    import sys
-    import os
-
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-    parser = argparse.ArgumentParser(description="STSMIRS Display Engine Test")
-    parser.add_argument("--config", default="config.json", help="Path to config.json")
-    parser.add_argument("--source", default=None,
-                        help="Video source: URL, file path, or '0' for webcam")
-    args = parser.parse_args()
-
-    if not os.path.exists(args.config):
-        print(f"[ERROR] Config not found: {args.config}")
-        exit(1)
-
-    # Import tracker
-    from src.tracker import PersonTracker
-
-    # Load zone config
-    with open(args.config, "r") as f:
-        cfg = json.load(f)
-    zones_file = cfg.get("zones", {}).get("config_file", "zones_config.json")
-    zones = []
-    if os.path.exists(zones_file):
-        with open(zones_file, "r") as f:
-            zones = json.load(f).get("zones", [])
-        print(f"[Display] Loaded {len(zones)} zones from {zones_file}")
-
-    # Initialize
-    tracker = PersonTracker(args.config)
-    display = DisplayEngine(args.config)
-
-    # Video source
-    if args.source:
-        source = 0 if args.source == "0" else args.source
-    else:
-        source = cfg["stream"]["url"]
-
-    print("=" * 50)
-    print("  STSMIRS — Display Engine Test")
-    print(f"  Source: {source}")
-    print("  Keys: 'q' quit | 'e' emergency | 'a' alert")
-    print("=" * 50)
-
-    cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        print(f"[WARN] Could not open {source}, trying webcam...")
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("[ERROR] No video source.")
-            exit(1)
-
-    fps_time = time.time()
-    fps_count = 0
-    current_fps = 0.0
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.5)
-            continue
-
-        # Run tracker
-        persons = tracker.update(frame)
-
-        # Simulate some scores for demo (in real pipeline, event_trigger sets these)
-        for p in persons:
-            p.health_score = max(30, 100 - (p.track_id * 15) % 70)
-            p.crime_score = min(60, (p.track_id * 10) % 50)
-
-        # Render everything
-        output = display.render(frame, persons=persons, zones=zones, fps=current_fps)
-
-        # FPS
-        fps_count += 1
-        if time.time() - fps_time >= 1.0:
-            current_fps = fps_count / (time.time() - fps_time)
-            fps_count = 0
-            fps_time = time.time()
-
-        cv2.imshow(display.window_name, output)
-
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
-        elif key == ord('e'):
-            display.trigger_emergency()
-            print("[Test] Emergency triggered!")
-        elif key == ord('a'):
-            display.add_alert("FALL DETECTED - T-001 - ZONE-A - 97%", level="danger")
-            print("[Test] Alert added!")
-
-    cap.release()
-    cv2.destroyAllWindows()
-    print("[Done] Display test complete.")

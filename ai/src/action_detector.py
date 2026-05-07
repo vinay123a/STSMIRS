@@ -64,7 +64,7 @@ class ActionDetector:
 
         fighting_cfg = post_cfg.get("fighting", {})
         self.fighting_min_person_count = int(fighting_cfg.get("min_person_count", 2))
-        self.fighting_min_confidence = float(fighting_cfg.get("min_confidence", 0.78))
+        self.fighting_min_confidence = float(fighting_cfg.get("min_confidence", 0.72))
         self.fighting_min_speed = float(fighting_cfg.get("min_speed_norm", 0.015))
         self.fighting_max_distance = float(fighting_cfg.get("max_center_distance_norm", 0.18))
         self.fighting_min_iou = float(fighting_cfg.get("min_iou", 0.01))
@@ -309,7 +309,7 @@ class ActionDetector:
             self.classes[idx]: float(adjusted[idx]) for idx in range(len(self.classes))
         }
         should_emit = (
-            stable_label in {"Fall", "Lying_Still", "Fighting", "Panic"}
+            stable_label in {"Fall", "Fighting", "Panic"}
             and pred_class == stable_label
             and confidence >= threshold
             and state["streak"] >= required_windows
@@ -632,9 +632,3 @@ class ActionDetector:
             fallback_idx = self.class_to_idx.get(self.safe_fallback_label, 0)
             safe_probs[fallback_idx] = 1.0
         return safe_probs / max(float(safe_probs.sum()), 1e-6)
-
-
-if __name__ == "__main__":
-    print("=" * 50)
-    print("  STSMIRS - Action Detector Test")
-    print("=" * 50)

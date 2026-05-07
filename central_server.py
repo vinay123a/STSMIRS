@@ -24,6 +24,7 @@ class EventType(Enum):
     AGGRESSION = "AGGRESSION"
     SURGE = "SURGE"
     CROWD_DENSITY = "CROWD_DENSITY"
+    ZONE_VIOLATION = "ZONE_VIOLATION"
 
 
 # Map detection events to blockchain emergency types
@@ -33,6 +34,7 @@ EVENT_TO_EMERGENCY = {
     EventType.AGGRESSION:         "VIOLENT_FIGHT",
     EventType.SURGE:              "MEDICAL_EMERGENCY",
     EventType.CROWD_DENSITY:      "SMALL_FIGHT",
+    EventType.ZONE_VIOLATION:     "OFFENCE",
 }
 
 
@@ -72,6 +74,7 @@ class CentralServer:
         EventType.AGGRESSION:         30.0,
         EventType.SURGE:              25.0,
         EventType.CROWD_DENSITY:      20.0,
+        EventType.ZONE_VIOLATION:     40.0,
     }
 
     THRESHOLD = 50.0  # Below this → emergency
@@ -174,15 +177,8 @@ class CentralServer:
             print(f"[SERVER] Discarded event — confidence {event.confidence:.2f} < 0.70")
             return result
 
-        if event.confidence < 0.90:
-            result["action"] = "QUEUED_FOR_REVIEW (medium confidence)"
-            self.review_queue.append(event)
-            print(
-                f"[SERVER] Queued for human review — confidence {event.confidence:.2f}"
-            )
-            return result
-
-        # High confidence → auto-process
+        # All events >= 70% are now auto-processed for immediate response
+        print(f"[SERVER] Auto-processing incident — confidence {event.confidence:.2f}")
         return self._process_event(event, result)
 
     def _process_event(self, event: DetectionEvent, result: dict) -> dict:
