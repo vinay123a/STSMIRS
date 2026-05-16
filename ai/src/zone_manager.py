@@ -66,37 +66,45 @@ class ZoneManager:
         violations = []
         
         for person in persons:
-            foot_point = person.foot_point
-            assigned_zone = None
+            # Use center point for much higher sensitivity (any part of person entering)
+            center_x = person.bbox[0] + person.bbox[2]/2
+            center_y = person.bbox[1] + person.bbox[3]/2
+            test_point = (center_x, center_y)
+            
+            assigned_zone = "Outside"
             assigned_type = self.default_zone_type
             
-            # Check person against all zones
-            # If overlapping multiple, last one drawn takes precedence
             for zone in self.zones:
-                # pointPolygonTest returns > 0 if inside, 0 if on edge, < 0 if outside
-                dist = cv2.pointPolygonTest(zone["polygon_pts"], (float(foot_point[0]), float(foot_point[1])), measureDist=False)
-                
+                dist = cv2.pointPolygonTest(zone["polygon_pts"], (float(test_point[0]), float(test_point[1])), measureDist=False)
                 if dist >= 0:
                     assigned_zone = zone["zone_id"]
                     assigned_type = zone["type"]
+                    break
             
-            # Update person object state
             person.zone_id = assigned_zone
+            person.zone_type = assigned_type
+            
+            # LOUD DEBUG: Print to terminal if in a restricted area
+            if assigned_type == "Restricted":
+                print("\n" + "!"*60)
+                print(f"!!! [RESTRICTED ZONE] Person {person.track_id} detected in {assigned_zone} !!!")
+                print("!"*60 + "\n")
             
             # Detect zone transition
             prev_zone = self._current_zones.get(person.track_id)
             
             if assigned_zone and assigned_zone != prev_zone:
-                # Person entered a new zone
-                print(f"[ZoneManager] {'RESTRICTED ALERT' if assigned_type == 'Restricted' else 'Transition'}: {person.track_label} entered {assigned_zone} ({assigned_type})")
-                
-                # If Restricted, trigger an event
-                if assigned_type == "Restricted":
-                    violations.append({
-                        "person": person,
-                        "zone_id": assigned_zone,
-                        "timestamp": time.time()
-                    })
+                # Log transition for console/debugging
+                print(f"[ZoneManager] Transition: {person.track_label} entered {assigned_zone} ({assigned_type})")
+            
+            # If in Restricted zone, ALWAYS report it as a violation for the current frame.
+            # (Throttling/cooldown is handled by EventTriggerEngine)
+            if assigned_type == "Restricted":
+                violations.append({
+                    "person": person,
+                    "zone_id": assigned_zone,
+                    "timestamp": time.time()
+                })
             
             # Update history
             self._current_zones[person.track_id] = assigned_zone
@@ -106,57 +114,3 @@ class ZoneManager:
         self._current_zones = {k: v for k, v in self._current_zones.items() if k in active_ids}
         
         return violations
-
-
-# ═══════════════════════════════════════════════════════════════
-#  STANDALONE TEST — Run: python src/zone_manager.py
-# ═══════════════════════════════════════════════════════════════
-if __name__ == "__main__":
-    import os, sys
-    
-    # Ensure import from root
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    
-    # Create mock tracker person class for testing
-    class MockPerson:
-        def __init__(self, id, foot_x, foot_y):
-            self.track_id = id
-            self.track_label = f"T-{id:03d}"
-            self.foot_point = (foot_x, foot_y)
-            self.zone_id = None
-            
-    print("=" * 50)
-    print("  STSMIRS — Zone Manager Test")
-    print("=" * 50)
-    
-    zm = ZoneManager("config.json")
-    
-    print(f"\nEvaluating persons against {len(zm.zones)} loaded zones...")
-    
-    # Mock some people (based on zones_config.json coordinates)
-    # ZONE-A (Restricted): ~ (100, 880) is inside
-    # ZONE-B (Normal): ~ (1000, 600) is inside
-    # Outside: (100, 100)
-    
-    p1 = MockPerson(1, 100, 880)
-    p2 = MockPerson(2, 1000, 600)
-    p3 = MockPerson(3, 100, 100)
-    
-    print("\n[Frame 1]")
-    violations1 = zm.update([p1, p2, p3])
-    print(f"P1 assigned to: {p1.zone_id}")
-    print(f"P2 assigned to: {p2.zone_id}")
-    print(f"P3 assigned to: {p3.zone_id}")
-    print(f"Violations triggered: {len(violations1)}")
-    
-    print("\n[Frame 2 - no movement]")
-    violations2 = zm.update([p1, p2, p3])
-    print(f"Violations triggered: {len(violations2)} (should be 0, already recorded)")
-    
-    print("\n[Frame 3 - P3 enters Restricted Zone A]")
-    p3.foot_point = (100, 880)
-    violations3 = zm.update([p1, p2, p3])
-    print(f"P3 assigned to: {p3.zone_id}")
-    print(f"Violations triggered: {len(violations3)} (should be 1)")
-    
-    print("\n[Done] Zone test complete.")

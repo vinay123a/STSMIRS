@@ -179,6 +179,7 @@ def get_events():
             {
                 "tourist_id": e.tourist_id,
                 "event_type": e.event_type.value,
+                "min_confidence": 0.72,
                 "confidence": e.confidence,
                 "zone_id": e.zone_id,
                 "source": e.source,
@@ -338,26 +339,7 @@ def detect():
         result["final_action"] = "DISCARDED"
         return jsonify(result)
 
-    if confidence < 0.90:
-        # Queue for human review — do NOT process yet
-        event = DetectionEvent(
-            event_type=event_type,
-            confidence=confidence,
-            source=source,
-            zone_id=zone_id,
-            tourist_id=tourist_id if source == "AI_CAMERA" else None,
-        )
-        server.review_queue.append(event)
-        result["steps"].append({
-            "step": 4,
-            "title": "Central Server: Confidence Routing",
-            "action": "QUEUED_FOR_HUMAN_REVIEW",
-            "reason": f"Confidence {confidence:.2f} is medium (0.70-0.89). Awaiting officer decision.",
-        })
-        result["final_action"] = "QUEUED_FOR_HUMAN_REVIEW"
-        return jsonify(result)
-
-    # High confidence — process immediately
+    # All events >= 70% are now auto-processed for immediate response
     return _process_and_run_blockchain(event_type, confidence, source, zone_id, tourist_id, result)
 
 @app.route("/api/review/approve", methods=["POST"])
@@ -547,7 +529,7 @@ def _process_and_run_blockchain(event_type, confidence, source, zone_id, tourist
             "zone_score": round(zone_score, 1),
             "message": "No individual identity involved. Blockchain identity access and selective release are not applicable. Zone alert logged to central server for responder dispatch.",
         })
-        result["final_action"] = "IOT_ZONE_ALERT"
+        result["final_action"] = "ZONE_VIOLATION_LOGGED"
 
     # Save processed events list
     event_entry = {
